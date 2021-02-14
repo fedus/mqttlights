@@ -1,0 +1,15 @@
+#ifndef AUTH_H
+#define AUTH_H
+
+// Replace with your actual SSID and password:
+#define WIFI_SSID "mySSID"
+#define WIFI_PASSWD "myPassword"
+
+#define MQTT_HOST "mqtt-host"
+#define MQTT_USER "mqtt-user"
+#define MQTT_PASSWD "mqtt-password"
+
+#define OTA_HOSTNAME "Fairylights"
+#define OTA_PASSWD "ota-pass"
+
+#endif
