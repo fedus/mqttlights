@@ -1,7 +1,6 @@
 #ifndef BEDROOM_H
 #define BEDROOM_H
 
-// Replace with your actual SSID and password:
 #define LIGHT_NAME "xmas"
 #define LIGHT_NICK "Bedroom"
 

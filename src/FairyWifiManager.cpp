@@ -1,3 +1,20 @@
+/*
+ FairyWifiManager.cpp - User-friendly(ish) wifi connection handling
+ (c) 2019 Federico Gentile
+*/
+
+#include <Arduino.h>
+
+#if defined(ESP32)
+#include "SPIFFS.h"
+#else
+#include "FS.h"
+#endif
+
+#include <FairyWifiManager.h>
+#include <WiFiManager.h>
+#include <ArduinoJson.h>
+
 //flag for saving data (WiFiManager)
 bool shouldSaveConfig = false;
 
@@ -7,7 +24,7 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
-void WiFiManagerSetup() {
+void WiFiManagerSetup(char* light_name, char* light_nick) {
   //clean FS, for testing
   //SPIFFS.format();
 

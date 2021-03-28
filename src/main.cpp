@@ -1,10 +1,8 @@
-#include <FS.h>
+#include <Arduino.h>
 
 #if defined(ESP32)
-#include "SPIFFS.h"
 #include <WiFi.h>
 #include <analogWrite.h>
-#include <WebServer.h>
 #include "Tree.h"
 #else
 #include <ESP8266WiFi.h>
@@ -13,10 +11,9 @@
 #endif
 
 #include <ArduinoJson.h>
-#include <DNSServer.h>
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
-#include <WiFiManager.h>
+#include <FairyWifiManager.h>
 #include "cie1931.h"
 #include "auth.h"
 #include "FairyLights.h"
@@ -69,46 +66,6 @@ uint8_t fade_parser_index = 0;
 unsigned long fade_params[] = {0, 0};
 char topicBuffer[100];
 
-void setup() {
-  initDefaults();
-  randomSeed(analogRead(0));  // Because needed by some parts like the FairyLight lib
-  Serial.begin(115200);
-  Serial.println("SETUP");
-  pinMode(builtinPin, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
-  digitalWrite(builtinPin, builtinOff);
-  fairy.setup(fairyPin);
-  fairy.setGoal(5, false, false);
-  fairy.handle();
-  //setup_wifi();
-  WiFiManagerSetup();
-  fairy.setGoal(0, false, false);
-  fairy.handle();
-  OTAinit();
-  // Set brightness to default value after signalling wifi setup
-  fairy.setGoal(STD_BRI, false, false);
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
-}
-
-
-void loop() {
-  ArduinoOTA.handle();
-  if (!client.connected()) {
-    digitalWrite(builtinPin, builtinOn);
-    fairy.setGoal(0, false, true);
-    fairy.handle();
-    delay(50);
-    fairy.setGoal(10, false, false);
-    fairy.handle();
-    delay(50);
-    fairy.setGoal(0, false, false);
-    fairy.handle();
-    reconnect();
-    digitalWrite(builtinPin, builtinOff);
-  }
-  client.loop();
-  fairy.loop();
-}
 
 void initDefaults() {
   sprintf(sub_topic, "%s%s%s", "lux/lights/", light_name, "/control/");
@@ -154,7 +111,6 @@ void OTAinit() {
   ArduinoOTA.begin();
 }
 
-
 void setup_wifi() {
   delay(10);
   // We start by connecting to a WiFi network
@@ -175,6 +131,68 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+}
+
+void sendStatus() {
+    Serial.print("[ Sending status ]");
+
+    FairyState fstate = fairy.getState();
+
+    client.publish(will_topic, online_keyword, true);
+    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+    client.publish(topicBuffer, String(fstate.mode).c_str());
+
+    delay(mqtt_delay);
+
+    if (fstate.mode == STATIC) {
+      if (fstate.curr == fstate.goal) {
+        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
+        client.publish(topicBuffer, String(fstate.curr).c_str());
+      }
+      else {
+        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
+        client.publish(topicBuffer, String(fstate.goal).c_str());
+      }
+    }
+    delay(mqtt_delay);
+    sprintf(topicBuffer, "%s%s", pub_topic, "step");
+    client.publish(topicBuffer, String(fstate.step).c_str());
+    delay(mqtt_delay);
+    sprintf(topicBuffer, "%s%s", pub_topic, "min");
+    client.publish(topicBuffer, String(fstate.min).c_str());
+    delay(mqtt_delay);
+    sprintf(topicBuffer, "%s%s", pub_topic, "max");
+    client.publish(topicBuffer, String(fstate.max).c_str());
+    delay(mqtt_delay);
+    sprintf(topicBuffer, "%s%s", pub_topic, "delay");
+    client.publish(topicBuffer, String(fstate.delay).c_str());
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Create a random client ID
+    String clientId = "mqtt-fairylight-"+String(light_name);
+    // Attempt to connect
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_passwd, will_topic, 0, 1, will_message)) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      client.publish(will_topic, online_keyword, true);
+      // ... and resubscribe
+      sprintf(topicBuffer, "%s%s", sub_topic, "#");
+      client.subscribe(topicBuffer);
+      client.subscribe(discovery_topic);
+      fairy.revertGoal(false);
+      sendStatus();
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -367,64 +385,42 @@ void callback(char* topic, byte* payload, unsigned int length) {
   digitalWrite(builtinPin, builtinOff);
 }
 
-void sendStatus() {
-    Serial.print("[ Sending status ]");
-
-    FairyState fstate = fairy.getState();
-
-    client.publish(will_topic, online_keyword, true);
-    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
-    client.publish(topicBuffer, String(fstate.mode).c_str());
-
-    delay(mqtt_delay);
-
-    if (fstate.mode == STATIC) {
-      if (fstate.curr == fstate.goal) {
-        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
-        client.publish(topicBuffer, String(fstate.curr).c_str());
-      }
-      else {
-        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
-        client.publish(topicBuffer, String(fstate.goal).c_str());
-      }
-    }
-    delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "step");
-    client.publish(topicBuffer, String(fstate.step).c_str());
-    delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "min");
-    client.publish(topicBuffer, String(fstate.min).c_str());
-    delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "max");
-    client.publish(topicBuffer, String(fstate.max).c_str());
-    delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "delay");
-    client.publish(topicBuffer, String(fstate.delay).c_str());
+void setup() {
+  initDefaults();
+  randomSeed(analogRead(0));  // Because needed by some parts like the FairyLight lib
+  Serial.begin(115200);
+  Serial.println("SETUP");
+  pinMode(builtinPin, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
+  digitalWrite(builtinPin, builtinOff);
+  fairy.setup(fairyPin);
+  fairy.setGoal(5, false, false);
+  fairy.handle();
+  //setup_wifi();
+  WiFiManagerSetup(light_name, light_nick);
+  fairy.setGoal(0, false, false);
+  fairy.handle();
+  OTAinit();
+  // Set brightness to default value after signalling wifi setup
+  fairy.setGoal(STD_BRI, false, false);
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 }
 
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Create a random client ID
-    String clientId = "mqtt-fairylight-"+String(light_name);
-    // Attempt to connect
-    if (client.connect(clientId.c_str(), mqtt_user, mqtt_passwd, will_topic, 0, 1, will_message)) {
-      Serial.println("connected");
-      // Once connected, publish an announcement...
-      client.publish(will_topic, online_keyword, true);
-      // ... and resubscribe
-      sprintf(topicBuffer, "%s%s", sub_topic, "#");
-      client.subscribe(topicBuffer);
-      client.subscribe(discovery_topic);
-      fairy.revertGoal(false);
-      sendStatus();
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
+void loop() {
+  ArduinoOTA.handle();
+  if (!client.connected()) {
+    digitalWrite(builtinPin, builtinOn);
+    fairy.setGoal(0, false, true);
+    fairy.handle();
+    delay(50);
+    fairy.setGoal(10, false, false);
+    fairy.handle();
+    delay(50);
+    fairy.setGoal(0, false, false);
+    fairy.handle();
+    reconnect();
+    digitalWrite(builtinPin, builtinOff);
   }
+  client.loop();
+  fairy.loop();
 }
