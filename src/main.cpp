@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "main.h"
 
 #if defined(ESP32)
 #include <WiFi.h>
@@ -195,38 +196,38 @@ void reconnect() {
   }
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  // Use built-in LED to show message processing
-  digitalWrite(builtinPin, builtinOn);
+void setMode(FairyLights &fairyLight, int new_value) {
+    Serial.print("[ Setting mode ");
+    Serial.print(new_value);
+    Serial.println(" ]");
 
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
+    fairyLight.setMode((Mode)new_value);
 
-  // Answer to discovery request
-  if(strcmp(topic, discovery_topic) == 0) {
-    Serial.print("[ Answering to discovery request ]");
+    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+    client.publish(topicBuffer, String(new_value).c_str());
 
-    sprintf(topicBuffer, "%s%s%s", discovery_topic, "/", light_name);
-    client.publish(topicBuffer, light_nick);
-  }
+    if (new_value == STATIC) {
+      FairyState fstate = fairyLight.getState();
 
-  // Set brightness instantaneously
-  sprintf(topicBuffer, "%s%s", sub_topic, "brightness");
-  if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = atoi((char *)payload);
+      if (fstate.curr == fstate.goal) {
+        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
+        client.publish(topicBuffer, String(fstate.curr).c_str());
+      }
+      else {
+        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
+        client.publish(topicBuffer, String(fstate.goal).c_str());
+      }
+    }
+}
+
+void setBrightness(FairyLights &fairyLight, int new_value) {
     Serial.print("[ Setting brightness to ");
     Serial.print(new_value);
     Serial.println(" ]");
-    fairy.setGoal(new_value, false, true);
+    fairyLight.setGoal(new_value, false, true);
 
-    if(fairy.getState().mode != STATIC) {
-      fairy.setMode(STATIC);
+    if(fairyLight.getState().mode != STATIC) {
+      fairyLight.setMode(STATIC);
       sprintf(topicBuffer, "%s%s", pub_topic, "mode");
       client.publish(topicBuffer, String(STATIC).c_str());
       delay(mqtt_delay);
@@ -236,14 +237,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
     client.publish(topicBuffer, String(new_value).c_str());
     sprintf(topicBuffer, "%s%s", pub_topic, "debug/cie");
     client.publish(topicBuffer, String(cie[new_value]).c_str());
-  }
+}
 
-  // Set brightness by fading
-  sprintf(topicBuffer, "%s%s", sub_topic, "fade");
-  if(strcmp(topic, topicBuffer) == 0) {
+void setFade(FairyLights &fairyLight, byte* payload, unsigned int length) {
     // For fading, we need to set to STATIC before setting the new goal (due to goal's setup)
-    if(fairy.getState().mode != STATIC) {
-      fairy.setMode(STATIC);
+    if(fairyLight.getState().mode != STATIC) {
+      fairyLight.setMode(STATIC);
       sprintf(topicBuffer, "%s%s", pub_topic, "mode");
       client.publish(topicBuffer, String(STATIC).c_str());
       delay(mqtt_delay);
@@ -273,10 +272,57 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print(" with fade delay ");
     Serial.print(fade_params[1]);
     Serial.println(" ]");
-    fairy.setGoal(fade_params[0], true, true, fade_params[1]);
+    fairyLight.setGoal(fade_params[0], true, true, fade_params[1]);
 
     sprintf(topicBuffer, "%s%s", pub_topic, "fade");
     client.publish(topicBuffer, String(fade_params[0]).c_str());
+}
+
+void setGeneric(const FairyCallback &fairyCallback, const char* topic, const char* description, int new_value) {
+    Serial.print("[ Setting ");
+    Serial.print(description);
+    Serial.print(" to ");
+    Serial.print(new_value);
+    Serial.println(" ]");
+    fairyCallback(new_value);
+
+    sprintf(topicBuffer, "%s%s", pub_topic, topic);
+    client.publish(topicBuffer, String(new_value).c_str());
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // Use built-in LED to show message processing
+  digitalWrite(builtinPin, builtinOn);
+
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  // Answer to discovery request
+  if(strcmp(topic, discovery_topic) == 0) {
+    Serial.print("[ Answering to discovery request ]");
+
+    sprintf(topicBuffer, "%s%s%s", discovery_topic, "/", light_name);
+    client.publish(topicBuffer, light_nick);
+  }
+
+  // Set brightness instantaneously
+  sprintf(topicBuffer, "%s%s", sub_topic, "brightness");
+  if(strcmp(topic, topicBuffer) == 0) {
+    payload[length] = '\0'; // Make payload a string by NULL terminating it.
+    int new_value = atoi((char *)payload);
+
+    setBrightness(fairy, new_value);
+  }
+
+  // Set brightness by fading
+  sprintf(topicBuffer, "%s%s", sub_topic, "fade");
+  if(strcmp(topic, topicBuffer) == 0) {
+    setFade(fairy, payload, length);
   }
 
   // Set loop delay
@@ -284,13 +330,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
     int new_value = atoi((char *)payload);
-    Serial.print("[ Setting loop delay to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
-    fairy.setDelay(new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "delay");
-    client.publish(topicBuffer, String(new_value).c_str());
+    setGeneric(
+      std::bind(&FairyLights::setDelay, std::ref(fairy), std::placeholders::_1),
+      "delay",
+      "loop delay",
+      new_value
+    );
   }
 
   // Set min brightness
@@ -298,13 +344,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
     int new_value = atoi((char *)payload);
-    Serial.print("[ Setting MIN brightness to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
-    fairy.setMin(new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "min");
-    client.publish(topicBuffer, String(new_value).c_str());
+    setGeneric(
+      std::bind(&FairyLights::setMin, std::ref(fairy), std::placeholders::_1),
+      "min",
+      "MIN brightness",
+      new_value
+    );
   }
 
   // Set max brightness
@@ -312,13 +358,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
     int new_value = atoi((char *)payload);
-    Serial.print("[ Setting MAX brightness to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
-    fairy.setMax(new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "max");
-    client.publish(topicBuffer, String(new_value).c_str());
+    setGeneric(
+      std::bind(&FairyLights::setMax, std::ref(fairy), std::placeholders::_1),
+      "max",
+      "MAX brightness",
+      new_value
+    );
   }
 
   // Set brightness step
@@ -326,26 +372,26 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
     int new_value = _max(1, atoi((char *)payload));
-    Serial.print("[ Setting step to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
-    fairy.setStep(new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "step");
-    client.publish(topicBuffer, String(new_value).c_str());
+    setGeneric(
+      std::bind(&FairyLights::setStep, std::ref(fairy), std::placeholders::_1),
+      "step",
+      "step",
+      new_value
+    );
   }
 
   sprintf(topicBuffer, "%s%s", sub_topic, "bump");
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
     int amount = _max(1, atoi((char *)payload));
-    fairy.bump(amount);
-    Serial.print("[ Bumping by ");
-    Serial.print(amount);
-    Serial.println(" ]");
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "bump");
-    client.publish(topicBuffer, String(amount).c_str());
+    setGeneric(
+      std::bind(&FairyLights::bump, std::ref(fairy), std::placeholders::_1),
+      "bump",
+      "bump",
+      amount
+    );
   }
 
 
@@ -357,28 +403,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
   sprintf(topicBuffer, "%s%s", sub_topic, "mode");
   if(strcmp(topic, topicBuffer) == 0) {
     payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int _mode = atoi((char *)payload);
-    Serial.print("[ Setting mode ");
-    Serial.print(_mode);
-    Serial.println(" ]");
+    int new_mode = atoi((char *)payload);
 
-    fairy.setMode((Mode)_mode);
-
-    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
-    client.publish(topicBuffer, String(_mode).c_str());
-
-    if (_mode == STATIC) {
-      FairyState fstate = fairy.getState();
-      if (fstate.curr == fstate.goal) {
-        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
-        client.publish(topicBuffer, String(fstate.curr).c_str());
-      }
-      else {
-        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
-        client.publish(topicBuffer, String(fstate.goal).c_str());
-      }
-    }
-
+    setMode(fairy, new_mode);
   }
 
   // Turn built-in LED off

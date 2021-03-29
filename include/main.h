@@ -11,6 +11,10 @@
 #define main_h
 
 #include <Arduino.h>
+#include <functional>
+#include "FairyLights.h"
+
+typedef std::function<void (int)> FairyCallback;
 
 void initDefaults();
 
@@ -18,6 +22,10 @@ void OTAinit();
 
 void setup_wifi();
 
+void setMode(FairyLights &fairyLight, int new_value);
+void setBrightness(FairyLights &fairyLight, int new_value);
+void setFade(FairyLights &fairyLight, byte* payload, unsigned int length);
+void setGeneric(const FairyCallback &fairyCallback, const char* topic, const char* description, int new_value);
 void callback(char* topic, byte* payload, unsigned int length);
 
 void sendStatus();
