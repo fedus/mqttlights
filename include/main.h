@@ -22,6 +22,8 @@ void OTAinit();
 
 void setup_wifi();
 
+int getIntFromBytePayload(byte* payload, unsigned int length);
+void genericSerialLog(const char* description, const int new_value);
 void setMode(FairyLights &fairyLight, int new_value);
 void setBrightness(FairyLights &fairyLight, int new_value);
 void setFade(FairyLights &fairyLight, byte* payload, unsigned int length);

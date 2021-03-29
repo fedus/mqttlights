@@ -196,10 +196,21 @@ void reconnect() {
   }
 }
 
-void setMode(FairyLights &fairyLight, int new_value) {
-    Serial.print("[ Setting mode ");
+int getIntFromBytePayload(byte* payload, unsigned int length) {
+    payload[length] = '\0'; // Make payload a string by NULL terminating it.
+    return atoi((char *)payload);
+}
+
+void genericSerialLog(const char* description, const int new_value) {
+    Serial.print("[ Setting ");
+    Serial.print(description);
+    Serial.print(" to ");
     Serial.print(new_value);
     Serial.println(" ]");
+}
+
+void setMode(FairyLights &fairyLight, int new_value) {
+    genericSerialLog("mode", new_value);
 
     fairyLight.setMode((Mode)new_value);
 
@@ -221,9 +232,7 @@ void setMode(FairyLights &fairyLight, int new_value) {
 }
 
 void setBrightness(FairyLights &fairyLight, int new_value) {
-    Serial.print("[ Setting brightness to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
+    genericSerialLog("brightness", new_value);
     fairyLight.setGoal(new_value, false, true);
 
     if(fairyLight.getState().mode != STATIC) {
@@ -266,7 +275,6 @@ void setFade(FairyLights &fairyLight, byte* payload, unsigned int length) {
       fade_parser=strtok(NULL, ",");
     }
 
-    //int new_value = atoi((char *)payload);
     Serial.print("[ Fading brightness to ");
     Serial.print(fade_params[0]);
     Serial.print(" with fade delay ");
@@ -279,11 +287,7 @@ void setFade(FairyLights &fairyLight, byte* payload, unsigned int length) {
 }
 
 void setGeneric(const FairyCallback &fairyCallback, const char* topic, const char* description, int new_value) {
-    Serial.print("[ Setting ");
-    Serial.print(description);
-    Serial.print(" to ");
-    Serial.print(new_value);
-    Serial.println(" ]");
+    genericSerialLog(description, new_value);
     fairyCallback(new_value);
 
     sprintf(topicBuffer, "%s%s", pub_topic, topic);
@@ -310,68 +314,55 @@ void callback(char* topic, byte* payload, unsigned int length) {
     client.publish(topicBuffer, light_nick);
   }
 
-  // Set brightness instantaneously
-  sprintf(topicBuffer, "%s%s", sub_topic, "brightness");
-  if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = atoi((char *)payload);
-
-    setBrightness(fairy, new_value);
-  }
-
   // Set brightness by fading
   sprintf(topicBuffer, "%s%s", sub_topic, "fade");
   if(strcmp(topic, topicBuffer) == 0) {
     setFade(fairy, payload, length);
   }
 
+  // Set brightness instantaneously
+  sprintf(topicBuffer, "%s%s", sub_topic, "brightness");
+  if(strcmp(topic, topicBuffer) == 0) {
+    setBrightness(fairy, getIntFromBytePayload(payload, length));
+  }
+
   // Set loop delay
   sprintf(topicBuffer, "%s%s", sub_topic, "delay");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = atoi((char *)payload);
-
     setGeneric(
       std::bind(&FairyLights::setDelay, std::ref(fairy), std::placeholders::_1),
       "delay",
       "loop delay",
-      new_value
+      getIntFromBytePayload(payload, length)
     );
   }
 
   // Set min brightness
   sprintf(topicBuffer, "%s%s", sub_topic, "min");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = atoi((char *)payload);
-
     setGeneric(
       std::bind(&FairyLights::setMin, std::ref(fairy), std::placeholders::_1),
       "min",
       "MIN brightness",
-      new_value
+      getIntFromBytePayload(payload, length)
     );
   }
 
   // Set max brightness
   sprintf(topicBuffer, "%s%s", sub_topic, "max");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = atoi((char *)payload);
-
     setGeneric(
       std::bind(&FairyLights::setMax, std::ref(fairy), std::placeholders::_1),
       "max",
       "MAX brightness",
-      new_value
+      getIntFromBytePayload(payload, length)
     );
   }
 
   // Set brightness step
   sprintf(topicBuffer, "%s%s", sub_topic, "step");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_value = _max(1, atoi((char *)payload));
+    int new_value = _max(1, getIntFromBytePayload(payload, length));
 
     setGeneric(
       std::bind(&FairyLights::setStep, std::ref(fairy), std::placeholders::_1),
@@ -383,8 +374,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   sprintf(topicBuffer, "%s%s", sub_topic, "bump");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int amount = _max(1, atoi((char *)payload));
+    int amount = _max(1, getIntFromBytePayload(payload, length));
 
     setGeneric(
       std::bind(&FairyLights::bump, std::ref(fairy), std::placeholders::_1),
@@ -402,10 +392,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   sprintf(topicBuffer, "%s%s", sub_topic, "mode");
   if(strcmp(topic, topicBuffer) == 0) {
-    payload[length] = '\0'; // Make payload a string by NULL terminating it.
-    int new_mode = atoi((char *)payload);
-
-    setMode(fairy, new_mode);
+    setMode(fairy, getIntFromBytePayload(payload, length));
   }
 
   // Turn built-in LED off
