@@ -34,14 +34,10 @@ const char* ota_passwd = OTA_PASSWD;
 
 char light_name[40] = LIGHT_NAME;
 char light_nick[40] = LIGHT_NICK;
+char device_name[] = "gromper"; // TODO: get from config
 
-char sub_topic[100];
-char pub_topic[100];
-char will_topic[100];
-const char* discovery_topic = "lux/discovery";
-
-const char will_message[] = "offline";
-const char online_keyword[] = "online";
+const char* will_message = MQTT_WILL_MESSAGE;
+const char* online_keyword = MQTT_ONLINE_KEYWORD;
 
 // PIN Settings
 const int fairyPin = FAIRY_PIN;     // 5 on Nodemcu, 27 on feather
@@ -50,7 +46,7 @@ const int builtinOn = BUILTIN_ON;
 const int builtinOff = BUILTIN_OFF;
 
 // FairyLight class
-FairyLights fairy;
+FairyContainer fairyContainer;
 
 bool ota_blink = false;
 
@@ -66,13 +62,7 @@ char *fade_parser;
 uint8_t fade_parser_index = 0;
 unsigned long fade_params[] = {0, 0};
 char topicBuffer[100];
-
-
-void initDefaults() {
-  sprintf(sub_topic, "%s%s%s", "lux/lights/", light_name, "/control/");
-  sprintf(pub_topic, "%s%s%s", "lux/lights/", light_name, "/status/");
-  sprintf(will_topic, "%s%s", pub_topic, "connection");
-}
+char topicParts[10][40];
 
 void OTAinit() {
   ArduinoOTA.setHostname(ota_hostname);
@@ -82,8 +72,8 @@ void OTAinit() {
     Serial.println("Start");
   });
   ArduinoOTA.onEnd([]() {
-    fairy.setGoal(INPUT_MAX, false, false);
-    fairy.handle();
+    fairyContainer.getDefaultFairyLight().setGoal(INPUT_MAX, false, false);
+    fairyContainer.getDefaultFairyLight().handle();
     Serial.println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -96,12 +86,12 @@ void OTAinit() {
       _ota_bright = INPUT_MAX;
       ota_blink = true;
     }
-    fairy.setGoal(_ota_bright, false, false);
-    fairy.handle();
+    fairyContainer.getDefaultFairyLight().setGoal(_ota_bright, false, false);
+    fairyContainer.getDefaultFairyLight().handle();
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    fairy.setMode(BLINK);
+    fairyContainer.getDefaultFairyLight().setMode(BLINK);
     Serial.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
     else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
@@ -134,38 +124,39 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-void sendStatus() {
+void sendStatus(FairyMQTTBinder &fairyBinder) {
     Serial.print("[ Sending status ]");
 
-    FairyState fstate = fairy.getState();
+    FairyState fstate = fairyBinder.getFairyLight().getState();
 
-    client.publish(will_topic, online_keyword, true);
-    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getWillTopic());
+    client.publish(topicBuffer, online_keyword, true);
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "mode"));
     client.publish(topicBuffer, String(fstate.mode).c_str());
 
     delay(mqtt_delay);
 
     if (fstate.mode == STATIC) {
       if (fstate.curr == fstate.goal) {
-        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
+        snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "brightness"));
         client.publish(topicBuffer, String(fstate.curr).c_str());
       }
       else {
-        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
+        snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "fade"));
         client.publish(topicBuffer, String(fstate.goal).c_str());
       }
     }
     delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "step");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "step"));
     client.publish(topicBuffer, String(fstate.step).c_str());
     delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "min");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "min"));
     client.publish(topicBuffer, String(fstate.min).c_str());
     delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "max");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "max"));
     client.publish(topicBuffer, String(fstate.max).c_str());
     delay(mqtt_delay);
-    sprintf(topicBuffer, "%s%s", pub_topic, "delay");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "delay"));
     client.publish(topicBuffer, String(fstate.delay).c_str());
 }
 
@@ -174,18 +165,22 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "mqtt-fairylight-"+String(light_name);
+    String clientId = "mqtt-fairylight-"+String(device_name);
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getWillTopic());
     // Attempt to connect
-    if (client.connect(clientId.c_str(), mqtt_user, mqtt_passwd, will_topic, 0, 1, will_message)) {
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_passwd, topicBuffer, 0, 1, will_message)) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish(will_topic, online_keyword, true);
+      client.publish(topicBuffer, online_keyword, true);
       // ... and resubscribe
-      sprintf(topicBuffer, "%s%s", sub_topic, "#");
+      fairyContainer.doForAllActiveFairyBinders([](FairyMQTTBinder fairyBinder) -> void {
+        snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getSubTopic(fairyBinder));
+        client.subscribe(topicBuffer);
+      });
+      snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getDiscoveryTopic());
       client.subscribe(topicBuffer);
-      client.subscribe(discovery_topic);
-      fairy.revertGoal(false);
-      sendStatus();
+      fairyContainer.getDefaultFairyLight().revertGoal(false); // TODO: do for all
+      fairyContainer.doForAllActiveFairyBinders([](FairyMQTTBinder fairyBinder) -> void { sendStatus(fairyBinder); }); // TODO: gives away all realms
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -209,50 +204,56 @@ void genericSerialLog(const char* description, const int new_value) {
     Serial.println(" ]");
 }
 
-void setMode(FairyLights &fairyLight, int new_value) {
+void setMode(FairyMQTTBinder &fairyBinder, int new_value) {
+    FairyLights fairyLight = fairyBinder.getFairyLight();
+
     genericSerialLog("mode", new_value);
 
     fairyLight.setMode((Mode)new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "mode"));
     client.publish(topicBuffer, String(new_value).c_str());
 
     if (new_value == STATIC) {
       FairyState fstate = fairyLight.getState();
 
       if (fstate.curr == fstate.goal) {
-        sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
+        snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "brightness"));
         client.publish(topicBuffer, String(fstate.curr).c_str());
       }
       else {
-        sprintf(topicBuffer, "%s%s", pub_topic, "fade");
+        snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "fade"));
         client.publish(topicBuffer, String(fstate.goal).c_str());
       }
     }
 }
 
-void setBrightness(FairyLights &fairyLight, int new_value) {
+void setBrightness(FairyMQTTBinder &fairyBinder, int new_value) {
+    FairyLights fairyLight = fairyBinder.getFairyLight();
+
     genericSerialLog("brightness", new_value);
     fairyLight.setGoal(new_value, false, true);
 
     if(fairyLight.getState().mode != STATIC) {
       fairyLight.setMode(STATIC);
-      sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+      snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "mode"));
       client.publish(topicBuffer, String(STATIC).c_str());
       delay(mqtt_delay);
     }
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "brightness");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "brightness"));
     client.publish(topicBuffer, String(new_value).c_str());
-    sprintf(topicBuffer, "%s%s", pub_topic, "debug/cie");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "debug/cie"));
     client.publish(topicBuffer, String(cie[new_value]).c_str());
 }
 
-void setFade(FairyLights &fairyLight, byte* payload, unsigned int length) {
+void setFade(FairyMQTTBinder &fairyBinder, byte* payload, unsigned int length) {
+    FairyLights fairyLight = fairyBinder.getFairyLight();
+
     // For fading, we need to set to STATIC before setting the new goal (due to goal's setup)
     if(fairyLight.getState().mode != STATIC) {
       fairyLight.setMode(STATIC);
-      sprintf(topicBuffer, "%s%s", pub_topic, "mode");
+      snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "mode"));
       client.publish(topicBuffer, String(STATIC).c_str());
       delay(mqtt_delay);
     }
@@ -282,16 +283,34 @@ void setFade(FairyLights &fairyLight, byte* payload, unsigned int length) {
     Serial.println(" ]");
     fairyLight.setGoal(fade_params[0], true, true, fade_params[1]);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, "fade");
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, "fade"));
     client.publish(topicBuffer, String(fade_params[0]).c_str());
 }
 
-void setGeneric(const FairyCallback &fairyCallback, const char* topic, const char* description, int new_value) {
+void setGeneric(const FairyCallback &fairyCallback, FairyMQTTBinder &fairyBinder, const char* topic, const char* description, int new_value) {
     genericSerialLog(description, new_value);
     fairyCallback(new_value);
 
-    sprintf(topicBuffer, "%s%s", pub_topic, topic);
+    snprintf(topicBuffer, sizeof(topicBuffer), "%s", fairyContainer.getPubTopic(fairyBinder, topic));
     client.publish(topicBuffer, String(new_value).c_str());
+}
+
+void extractTopicParts(const char* topic) {
+  for (int i = 0; i < 10; i++) {
+    topicParts[i][0] = 0;
+  }
+
+  char topicCopy[100];
+  snprintf(topicCopy, sizeof(topicCopy), "%s", topic);
+
+  int parser_index = 0;
+
+  char *parser = strtok(topicCopy, "/");
+
+  while(parser != NULL) {
+    snprintf(topicParts[parser_index++], sizeof(topicParts[parser_index]), "%s", parser);
+    parser=strtok(NULL, "/");
+  }
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -306,93 +325,107 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println();
 
+  extractTopicParts(topic);
+
   // Answer to discovery request
-  if(strcmp(topic, discovery_topic) == 0) {
+  if(strcmp(topicParts[DEVICES_OR_DISCOVERY_TOPIC_POS], MQTT_DISCOVERY_TOPIC) == 0) {
     Serial.print("[ Answering to discovery request ]");
 
-    sprintf(topicBuffer, "%s%s%s", discovery_topic, "/", light_name);
-    client.publish(topicBuffer, light_nick);
-  }
+    fairyContainer.doForAllActiveFairyBindersInRealm([](FairyMQTTBinder &fairyBinder) -> void {
+      snprintf(
+        topicBuffer,
+        sizeof(topicBuffer),
+        "%s/%s/%s/%s/%s",
+        MQTT_ROOT_TOPIC
+        MQTT_DISCOVERY_TOPIC,
+        topicParts[DISCOVERY_REALM_TOPIC_POS],
+        fairyContainer.getDeviceName(),
+        fairyBinder.getName()
+      );
+      client.publish(topicBuffer, fairyBinder.getNick());
+    }, topicParts[DISCOVERY_REALM_TOPIC_POS]);
 
-  // Set brightness by fading
-  sprintf(topicBuffer, "%s%s", sub_topic, "fade");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setFade(fairy, payload, length);
-  }
+  } else if (fairyContainer.hasFairyBinder(topicParts[LIGHT_TOPIC_POS])) {
 
-  // Set brightness instantaneously
-  sprintf(topicBuffer, "%s%s", sub_topic, "brightness");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setBrightness(fairy, getIntFromBytePayload(payload, length));
-  }
+    FairyMQTTBinder &fairyBinder = fairyContainer.getFairyBinder(topicParts[LIGHT_TOPIC_POS]);
+    FairyLights &fairyLight = fairyBinder.getFairyLight();
 
-  // Set loop delay
-  sprintf(topicBuffer, "%s%s", sub_topic, "delay");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setGeneric(
-      std::bind(&FairyLights::setDelay, std::ref(fairy), std::placeholders::_1),
-      "delay",
-      "loop delay",
-      getIntFromBytePayload(payload, length)
-    );
-  }
+    // Set brightness by fading
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "fade") == 0) {
+      setFade(fairyBinder, payload, length);
+    }
 
-  // Set min brightness
-  sprintf(topicBuffer, "%s%s", sub_topic, "min");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setGeneric(
-      std::bind(&FairyLights::setMin, std::ref(fairy), std::placeholders::_1),
-      "min",
-      "MIN brightness",
-      getIntFromBytePayload(payload, length)
-    );
-  }
+    // Set brightness instantaneously
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "brightness") == 0) {
+      setBrightness(fairyBinder, getIntFromBytePayload(payload, length));
+    }
 
-  // Set max brightness
-  sprintf(topicBuffer, "%s%s", sub_topic, "max");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setGeneric(
-      std::bind(&FairyLights::setMax, std::ref(fairy), std::placeholders::_1),
-      "max",
-      "MAX brightness",
-      getIntFromBytePayload(payload, length)
-    );
-  }
+    // Set loop delay
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "delay") == 0) {
+      setGeneric(
+        std::bind(&FairyLights::setDelay, std::ref(fairyLight), std::placeholders::_1),
+        fairyBinder,
+        "delay",
+        "loop delay",
+        getIntFromBytePayload(payload, length)
+      );
+    }
 
-  // Set brightness step
-  sprintf(topicBuffer, "%s%s", sub_topic, "step");
-  if(strcmp(topic, topicBuffer) == 0) {
-    int new_value = _max(1, getIntFromBytePayload(payload, length));
+    // Set min brightness
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "min") == 0) {
+      setGeneric(
+        std::bind(&FairyLights::setMin, std::ref(fairyLight), std::placeholders::_1),
+        fairyBinder,
+        "min",
+        "MIN brightness",
+        getIntFromBytePayload(payload, length)
+      );
+    }
 
-    setGeneric(
-      std::bind(&FairyLights::setStep, std::ref(fairy), std::placeholders::_1),
-      "step",
-      "step",
-      new_value
-    );
-  }
+    // Set max brightness
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "max") == 0) {
+      setGeneric(
+        std::bind(&FairyLights::setMax, std::ref(fairyLight), std::placeholders::_1),
+        fairyBinder,
+        "max",
+        "MAX brightness",
+        getIntFromBytePayload(payload, length)
+      );
+    }
 
-  sprintf(topicBuffer, "%s%s", sub_topic, "bump");
-  if(strcmp(topic, topicBuffer) == 0) {
-    int amount = _max(1, getIntFromBytePayload(payload, length));
+    // Set brightness step
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "step") == 0) {
+      int new_value = _max(1, getIntFromBytePayload(payload, length));
 
-    setGeneric(
-      std::bind(&FairyLights::bump, std::ref(fairy), std::placeholders::_1),
-      "bump",
-      "bump",
-      amount
-    );
-  }
+      setGeneric(
+        std::bind(&FairyLights::setStep, std::ref(fairyLight), std::placeholders::_1),
+        fairyBinder,
+        "step",
+        "step",
+        new_value
+      );
+    }
+
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "bump") == 0) {
+      int amount = _max(1, getIntFromBytePayload(payload, length));
+
+      setGeneric(
+        std::bind(&FairyLights::bump, std::ref(fairyLight), std::placeholders::_1),
+        fairyBinder,
+        "bump",
+        "bump",
+        amount
+      );
+    }
 
 
-  sprintf(topicBuffer, "%s%s", sub_topic, "get_status");
-  if(strcmp(topic, topicBuffer) == 0) {
-    sendStatus();
-  }
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "get_status") == 0) {
+      sendStatus(fairyBinder);
+    }
 
-  sprintf(topicBuffer, "%s%s", sub_topic, "mode");
-  if(strcmp(topic, topicBuffer) == 0) {
-    setMode(fairy, getIntFromBytePayload(payload, length));
+    if(strcmp(topicParts[COMMAND_TOPIC_POS], "mode") == 0) {
+      setMode(fairyBinder, getIntFromBytePayload(payload, length));
+    }
   }
 
   // Turn built-in LED off
@@ -400,22 +433,22 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void setup() {
-  initDefaults();
   randomSeed(analogRead(0));  // Because needed by some parts like the FairyLight lib
   Serial.begin(115200);
   Serial.println("SETUP");
   pinMode(builtinPin, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
   digitalWrite(builtinPin, builtinOff);
-  fairy.setup(fairyPin);
-  fairy.setGoal(5, false, false);
-  fairy.handle();
+  fairyContainer.setup(device_name);
+  fairyContainer.getDefaultFairyLight().setup(fairyPin); // TODO: do for all
+  fairyContainer.getDefaultFairyLight().setGoal(5, false, false);
+  fairyContainer.getDefaultFairyLight().handle();
   //setup_wifi();
   WiFiManagerSetup(light_name, light_nick);
-  fairy.setGoal(0, false, false);
-  fairy.handle();
+  fairyContainer.getDefaultFairyLight().setGoal(0, false, false);
+  fairyContainer.getDefaultFairyLight().handle();
   OTAinit();
   // Set brightness to default value after signalling wifi setup
-  fairy.setGoal(STD_BRI, false, false);
+  fairyContainer.getDefaultFairyLight().setGoal(STD_BRI, false, false);
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 }
@@ -424,17 +457,17 @@ void loop() {
   ArduinoOTA.handle();
   if (!client.connected()) {
     digitalWrite(builtinPin, builtinOn);
-    fairy.setGoal(0, false, true);
-    fairy.handle();
+    fairyContainer.getDefaultFairyLight().setGoal(0, false, true);
+    fairyContainer.getDefaultFairyLight().handle();
     delay(50);
-    fairy.setGoal(10, false, false);
-    fairy.handle();
+    fairyContainer.getDefaultFairyLight().setGoal(10, false, false);
+    fairyContainer.getDefaultFairyLight().handle();
     delay(50);
-    fairy.setGoal(0, false, false);
-    fairy.handle();
+    fairyContainer.getDefaultFairyLight().setGoal(0, false, false);
+    fairyContainer.getDefaultFairyLight().handle();
     reconnect();
     digitalWrite(builtinPin, builtinOff);
   }
   client.loop();
-  fairy.loop();
+  fairyContainer.loop();
 }

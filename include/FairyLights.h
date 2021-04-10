@@ -14,7 +14,7 @@
 #ifndef FairyLights_h
 #define FairyLights_h
 
-#include "cie1931.h" 
+#include "cie1931.h"
 #include <Arduino.h>
 #include <functional>
 #include "Pattern.h"
@@ -28,7 +28,7 @@
 #include "BumpPattern.h"
 #include "SparklePattern.h"
 #include "FairyCommon.h"
- 
+
 #define ON true
 #define OFF false
 
@@ -49,7 +49,7 @@
 #define INPUT_MIN 0
 #define INPUT_MAX 100
 
- 
+
 class FairyLights
 {
 public:
@@ -96,5 +96,5 @@ private:
  FairyState fstate;
  int8_t prevBri = -1;
 };
- 
+
 #endif

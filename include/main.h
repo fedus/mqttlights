@@ -13,10 +13,10 @@
 #include <Arduino.h>
 #include <functional>
 #include "FairyLights.h"
+#include "GeneralSettings.h"
+#include "FairyContainer.h"
 
 typedef std::function<void (int)> FairyCallback;
-
-void initDefaults();
 
 void OTAinit();
 
@@ -24,13 +24,15 @@ void setup_wifi();
 
 int getIntFromBytePayload(byte* payload, unsigned int length);
 void genericSerialLog(const char* description, const int new_value);
-void setMode(FairyLights &fairyLight, int new_value);
-void setBrightness(FairyLights &fairyLight, int new_value);
-void setFade(FairyLights &fairyLight, byte* payload, unsigned int length);
-void setGeneric(const FairyCallback &fairyCallback, const char* topic, const char* description, int new_value);
+void setMode(FairyMQTTBinder &fairyBinder, int new_value);
+void setBrightness(FairyMQTTBinder &fairyBinder, int new_value);
+void setFade(FairyMQTTBinder &fairyBinder, byte* payload, unsigned int length);
+void setGeneric(const FairyCallback &fairyCallback, FairyMQTTBinder &fairyBinder, const char* topic, const char* description, int new_value);
 void callback(char* topic, byte* payload, unsigned int length);
 
-void sendStatus();
+void extractTopicParts(const char* topic);
+
+void sendStatus(FairyMQTTBinder &fairyBinder);
 
 void reconnect();
 
