@@ -4,11 +4,11 @@
 #if defined(ESP32)
 #include <WiFi.h>
 #include <analogWrite.h>
-#include "Tree.h"
+#include "E32.h"
 #else
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include "Bedroom.h"
+#include "E8266.h"
 #endif
 
 #include <ArduinoJson.h>
@@ -32,15 +32,13 @@ char mqtt_passwd[40] = MQTT_PASSWD;
 const char* ota_hostname = OTA_HOSTNAME;
 const char* ota_passwd = OTA_PASSWD;
 
-char light_name[40] = LIGHT_NAME;
-char light_nick[40] = LIGHT_NICK;
-char device_name[] = "gromper"; // TODO: get from config
+char device_name[] = DEFAULT_DEVICE_NAME; // TODO: get from config
 
 const char* will_message = MQTT_WILL_MESSAGE;
 const char* online_keyword = MQTT_ONLINE_KEYWORD;
 
 // PIN Settings
-const int fairyPin = FAIRY_PIN;     // 5 on Nodemcu, 27 on feather
+//const int fairyPin;     // 5 on Nodemcu, 27 on feather
 const int builtinPin = BUILTIN_PIN; // 2 on Nodemcu, 13 on feather
 const int builtinOn = BUILTIN_ON;
 const int builtinOff = BUILTIN_OFF;
@@ -54,15 +52,14 @@ int mqtt_delay = 15;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-long lastMsg = 0;
-char msg[50];
-int value = 0;
 
 char *fade_parser;
 uint8_t fade_parser_index = 0;
 unsigned long fade_params[] = {0, 0};
 char topicBuffer[100];
 char topicParts[10][40];
+
+char lightConfig[FAIRY_AMOUNT][4][40];
 
 void OTAinit() {
   ArduinoOTA.setHostname(ota_hostname);
@@ -432,39 +429,44 @@ void callback(char* topic, byte* payload, unsigned int length) {
   digitalWrite(builtinPin, builtinOff);
 }
 
+void activate_fairylights() {
+  for (int i = 0; i < FAIRY_AMOUNT; i++) {
+    if (
+      strcmp(lightConfig[i][0], "") != 0
+      && strcmp(lightConfig[i][1], "") != 0
+      && strcmp(lightConfig[i][2], "") != 0
+      && strcmp(lightConfig[i][3], "") != 0
+    ) {
+      int pin = atoi((char *)lightConfig[i][3]);
+      fairyContainer.activateNew(
+        pin,
+        lightConfig[i][0],
+        lightConfig[i][1],
+        lightConfig[i][2]
+      );
+    }
+  }
+}
+
 void setup() {
   randomSeed(analogRead(0));  // Because needed by some parts like the FairyLight lib
   Serial.begin(115200);
   Serial.println("SETUP");
   pinMode(builtinPin, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
-  digitalWrite(builtinPin, builtinOff);
+  digitalWrite(builtinPin, builtinOn);
   fairyContainer.setup(device_name);
-  fairyContainer.getDefaultFairyLight().setup(fairyPin); // TODO: do for all
-  fairyContainer.getDefaultFairyLight().setGoal(5, false, false);
-  fairyContainer.getDefaultFairyLight().handle();
-  //setup_wifi();
-  WiFiManagerSetup(light_name, light_nick);
-  fairyContainer.getDefaultFairyLight().setGoal(0, false, false);
-  fairyContainer.getDefaultFairyLight().handle();
+  WiFiManagerSetup(lightConfig);
+  activate_fairylights();
   OTAinit();
-  // Set brightness to default value after signalling wifi setup
-  fairyContainer.getDefaultFairyLight().setGoal(STD_BRI, false, false);
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+  digitalWrite(builtinPin, builtinOff);
 }
 
 void loop() {
   ArduinoOTA.handle();
   if (!client.connected()) {
     digitalWrite(builtinPin, builtinOn);
-    fairyContainer.getDefaultFairyLight().setGoal(0, false, true);
-    fairyContainer.getDefaultFairyLight().handle();
-    delay(50);
-    fairyContainer.getDefaultFairyLight().setGoal(10, false, false);
-    fairyContainer.getDefaultFairyLight().handle();
-    delay(50);
-    fairyContainer.getDefaultFairyLight().setGoal(0, false, false);
-    fairyContainer.getDefaultFairyLight().handle();
     reconnect();
     digitalWrite(builtinPin, builtinOff);
   }

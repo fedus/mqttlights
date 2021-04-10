@@ -21,6 +21,7 @@ typedef std::function<void (int)> FairyCallback;
 void OTAinit();
 
 void setup_wifi();
+void activate_fairylights();
 
 int getIntFromBytePayload(byte* payload, unsigned int length);
 void genericSerialLog(const char* description, const int new_value);

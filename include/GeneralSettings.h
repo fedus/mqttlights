@@ -10,7 +10,9 @@
 #ifndef GeneralSettings_h
 #define GeneralSettings_h
 
-#define FAIRY_AMOUNT 2
+#define FAIRY_AMOUNT 3
+
+#define DEFAULT_DEVICE_NAME "fairylight"
 
 #define MQTT_ROOT_TOPIC "lux"
 #define MQTT_DISCOVERY_TOPIC "discovery"

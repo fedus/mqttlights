@@ -69,10 +69,10 @@ bool FairyContainer::hasFreeFairyBinder() {
   return false;
 }
 
-bool FairyContainer::activateNew(int pin, const char* name, const char* nick) {
+bool FairyContainer::activateNew(int pin, const char* name, const char* nick, const char* realm /* = "public" */) {
   if (!hasFreeFairyBinder()) return false;
 
-  getNextFreeFairyBinder().setup(pin, name, nick);
+  getNextFreeFairyBinder().setup(pin, name, nick, realm);
 
   return true;
 }

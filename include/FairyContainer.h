@@ -21,7 +21,7 @@ public:
  void doForAllActiveFairyBinders(FairyBinderOp op);
  void conditionalDoForAllActiveFairyBinders(FairyBinderOp op, FairyBinderOpCondition cond);
  void doForAllActiveFairyBindersInRealm(FairyBinderOp op, const char* realm);
- bool activateNew(int pin, const char* name, const char* nick);
+ bool activateNew(int pin, const char* name, const char* nick, const char* realm = "public");
  void loop();
  FairyLights& getFairyLight(const char* name);
  FairyLights& getDefaultFairyLight();
