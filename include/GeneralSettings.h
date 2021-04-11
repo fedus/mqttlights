@@ -16,7 +16,7 @@
 
 #define MQTT_ROOT_TOPIC "lux"
 #define MQTT_DISCOVERY_TOPIC "discovery"
-#define MQTT_DEVICES_TOPIC "topic"
+#define MQTT_DEVICES_TOPIC "devices"
 #define MQTT_LIGHTS_TOPIC "lights"
 #define MQTT_CONTROL_TOPIC "control"
 #define MQTT_STATUS_TOPIC "status"

@@ -5,8 +5,8 @@
 
 #include <FairyWifiManager.h>
 
-char buffer1[40];
-char buffer2[40];
+char buffer1[FAIRY_AMOUNT][4][40];
+char buffer2[FAIRY_AMOUNT][4][40];
 
 WiFiManagerParameter wifiParams[FAIRY_AMOUNT][4];
 
@@ -19,7 +19,23 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
+void setupBuffers() {
+  for (int i = 0; i < FAIRY_AMOUNT; i++) {
+    snprintf(buffer1[i][0], sizeof(buffer1[i][0]), "%s%d", "light_name_", i);
+    snprintf(buffer1[i][1], sizeof(buffer1[i][1]), "%s%d", "light_nick_", i);
+    snprintf(buffer1[i][2], sizeof(buffer1[i][2]), "%s%d", "light_realm_", i);
+    snprintf(buffer1[i][3], sizeof(buffer1[i][3]), "%s%d", "light_pin_", i);
+
+    snprintf(buffer2[i][0], sizeof(buffer2[i][0]), "%s %d", "Light identifier", i);
+    snprintf(buffer2[i][1], sizeof(buffer2[i][1]), "%s %d", "Light display name", i);
+    snprintf(buffer2[i][2], sizeof(buffer2[i][2]), "%s %d", "Light realm", i);
+    snprintf(buffer2[i][3], sizeof(buffer2[i][3]), "%s %d", "Light pin", i);
+  }
+}
+
 void WiFiManagerSetup(char (*lightConfig)[4][40]) {
+  setupBuffers();
+
   //clean FS, for testing
   //SPIFFS.format();
 
@@ -46,20 +62,10 @@ void WiFiManagerSetup(char (*lightConfig)[4][40]) {
           Serial.println("\nParsed json!");
 
           for (int i = 0; i < FAIRY_AMOUNT; i++) {
-            snprintf(buffer1, sizeof(buffer1), "%s%d", "light_name_", i);
-            snprintf(lightConfig[i][0], sizeof(lightConfig[i][0]), "%s", json[buffer1]);
-
-            snprintf(buffer1, sizeof(buffer1), "%s%d", "light_nick_", i);
-            snprintf(lightConfig[i][1], sizeof(lightConfig[i][1]), "%s", json[buffer1]);
-
-            snprintf(buffer1, sizeof(buffer1), "%s%d", "light_realm_", i);
-            snprintf(lightConfig[i][2], sizeof(lightConfig[i][2]), "%s", json[buffer1]);
-
-            snprintf(buffer1, sizeof(buffer1), "%s%d", "light_pin_", i);
-            snprintf(lightConfig[i][3], sizeof(lightConfig[i][3]), "%s", json[buffer1]);
-            //strcpy(light_name, json["light_name"]);
-            //strcpy(light_nick, json["light_nick"]);
-            //strcpy(light_realm, json["light_realm"]);
+            strcpy(lightConfig[i][0], json[buffer1[i][0]]);
+            strcpy(lightConfig[i][1], json[buffer1[i][1]]);
+            strcpy(lightConfig[i][2], json[buffer1[i][2]]);
+            strcpy(lightConfig[i][3], json[buffer1[i][3]]);
           }
 
         } else {
@@ -81,23 +87,10 @@ void WiFiManagerSetup(char (*lightConfig)[4][40]) {
 
   // WiFiManagerParamater's `init` method has been made public for this "hack" to work.
   for (int i = 0; i < FAIRY_AMOUNT; i++) {
-    snprintf(buffer1, sizeof(buffer1), "%s%d", "light_name_", i);
-    snprintf(buffer2, sizeof(buffer2), "%s %d", "Light identifier", i);
-    wifiParams[i][0].init(buffer1, buffer2, lightConfig[i][0], sizeof(lightConfig[i][0]), "", 1);
-
-    snprintf(buffer1, sizeof(buffer1), "%s%d", "light_nick_", i);
-    snprintf(buffer2, sizeof(buffer2), "%s %d", "Light display name", i);
-    wifiParams[i][1].init(buffer1, buffer2, lightConfig[i][1], sizeof(lightConfig[i][1]), "", 1);
-    //WiFiManagerParameter custom_light_nick("lightNick", "Light display name", light_nick, 40);
-
-    snprintf(buffer1, sizeof(buffer1), "%s%d", "light_realm_", i);
-    snprintf(buffer2, sizeof(buffer2), "%s %d", "Light realm", i);
-    wifiParams[i][2].init(buffer1, buffer2, lightConfig[i][2], sizeof(lightConfig[i][2]), "", 1);
-    //WiFiManagerParameter custom_light_realm("lightRealm", "Light realm", light_realm, 40);
-
-    snprintf(buffer1, sizeof(buffer1), "%s%d", "light_pin_", i);
-    snprintf(buffer2, sizeof(buffer2), "%s %d", "Light pin", i);
-    wifiParams[i][3].init(buffer1, buffer2, lightConfig[i][3], sizeof(lightConfig[i][3]), "", 1);
+    wifiParams[i][0].init(buffer1[i][0], buffer2[i][0], lightConfig[i][0], sizeof(lightConfig[i][0]), "", 1);
+    wifiParams[i][1].init(buffer1[i][1], buffer2[i][1], lightConfig[i][1], sizeof(lightConfig[i][1]), "", 1);
+    wifiParams[i][2].init(buffer1[i][2], buffer2[i][2], lightConfig[i][2], sizeof(lightConfig[i][2]), "", 1);
+    wifiParams[i][3].init(buffer1[i][3], buffer2[i][3], lightConfig[i][3], sizeof(lightConfig[i][3]), "", 1);
   }
 
   //WiFiManager
@@ -160,17 +153,13 @@ void WiFiManagerSetup(char (*lightConfig)[4][40]) {
     JsonObject& json = jsonBuffer.createObject();
 
     for (int i = 0; i < FAIRY_AMOUNT; i++) {
-      snprintf(buffer1, sizeof(buffer1), "%s%d", "light_name_", i);
-      json[buffer1] = lightConfig[i][0];
+      json[buffer1[i][0]] = lightConfig[i][0];
 
-      snprintf(buffer1, sizeof(buffer1), "%s%d", "light_nick_", i);
-      json[buffer1] = lightConfig[i][1];
+      json[buffer1[i][1]] = lightConfig[i][1];
 
-      snprintf(buffer1, sizeof(buffer1), "%s%d", "light_realm_", i);
-      json[buffer1] = lightConfig[i][2];
+      json[buffer1[i][2]] = lightConfig[i][2];
 
-      snprintf(buffer1, sizeof(buffer1), "%s%d", "light_pin_", i);
-      json[buffer1] = lightConfig[i][3];
+      json[buffer1[i][3]] = lightConfig[i][3];
     }
 
     File configFile = SPIFFS.open("/fairyConfig.json", "w");

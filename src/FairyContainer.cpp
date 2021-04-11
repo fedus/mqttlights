@@ -93,7 +93,7 @@ const char* FairyContainer::getWillTopic() {
   snprintf(
     topicBuffer,
     sizeof(topicBuffer),
-    "%s/s%/%s/%s",
+    "%s/%s/%s/%s",
     MQTT_ROOT_TOPIC,
     MQTT_DEVICES_TOPIC,
     deviceName,
@@ -127,7 +127,7 @@ const char* FairyContainer::buildTopic(const char* lightName, const char* contro
   snprintf(
     topicBuffer,
     sizeof(topicBuffer),
-    "%s/s%/%s/%s/%s/%s/%s",
+    "%s/%s/%s/%s/%s/%s/%s",
     MQTT_ROOT_TOPIC,
     MQTT_DEVICES_TOPIC,
     deviceName,

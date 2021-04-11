@@ -24,6 +24,8 @@
 
 void saveConfigCallback();
 
+void setupBuffers();
+
 void WiFiManagerSetup(char (*lightConfig)[4][40]);
 
 #endif

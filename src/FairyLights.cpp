@@ -103,7 +103,6 @@ void FairyLights::loop() {
 
   if(currentMillis - previousMillis > evaluated_delay) {
     previousMillis = currentMillis;
-
     handle();
   }
 

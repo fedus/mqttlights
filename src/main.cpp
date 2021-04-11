@@ -29,6 +29,9 @@ char mqtt_server[40] = MQTT_HOST;
 char mqtt_user[40] = MQTT_USER;
 char mqtt_passwd[40] = MQTT_PASSWD;
 
+const char* mqttRootTopic = MQTT_ROOT_TOPIC;
+const char* mqttDiscoveryTopic = MQTT_DISCOVERY_TOPIC;
+
 const char* ota_hostname = OTA_HOSTNAME;
 const char* ota_passwd = OTA_PASSWD;
 
@@ -122,7 +125,7 @@ void setup_wifi() {
 }
 
 void sendStatus(FairyMQTTBinder &fairyBinder) {
-    Serial.print("[ Sending status ]");
+    Serial.println("[ Sending status ]");
 
     FairyState fstate = fairyBinder.getFairyLight().getState();
 
@@ -226,7 +229,7 @@ void setMode(FairyMQTTBinder &fairyBinder, int new_value) {
 }
 
 void setBrightness(FairyMQTTBinder &fairyBinder, int new_value) {
-    FairyLights fairyLight = fairyBinder.getFairyLight();
+    FairyLights &fairyLight = fairyBinder.getFairyLight();
 
     genericSerialLog("brightness", new_value);
     fairyLight.setGoal(new_value, false, true);
@@ -245,7 +248,7 @@ void setBrightness(FairyMQTTBinder &fairyBinder, int new_value) {
 }
 
 void setFade(FairyMQTTBinder &fairyBinder, byte* payload, unsigned int length) {
-    FairyLights fairyLight = fairyBinder.getFairyLight();
+    FairyLights &fairyLight = fairyBinder.getFairyLight();
 
     // For fading, we need to set to STATIC before setting the new goal (due to goal's setup)
     if(fairyLight.getState().mode != STATIC) {
@@ -325,16 +328,21 @@ void callback(char* topic, byte* payload, unsigned int length) {
   extractTopicParts(topic);
 
   // Answer to discovery request
-  if(strcmp(topicParts[DEVICES_OR_DISCOVERY_TOPIC_POS], MQTT_DISCOVERY_TOPIC) == 0) {
-    Serial.print("[ Answering to discovery request ]");
+  if(
+    strcmp(topicParts[DEVICES_OR_DISCOVERY_TOPIC_POS], MQTT_DISCOVERY_TOPIC) == 0
+    && strcmp(topicParts[DISCOVERED_DEVICE_TOPIC], "") == 0 // Only respond to discovery request, not answers
+  ) {
+    Serial.print("[ Answering to discovery request for realm ");
+    Serial.print(topicParts[DISCOVERY_REALM_TOPIC_POS]);
+    Serial.println("]");
 
-    fairyContainer.doForAllActiveFairyBindersInRealm([](FairyMQTTBinder &fairyBinder) -> void {
+    fairyContainer.doForAllActiveFairyBindersInRealm([&](FairyMQTTBinder &fairyBinder) -> void {
       snprintf(
         topicBuffer,
         sizeof(topicBuffer),
         "%s/%s/%s/%s/%s",
-        MQTT_ROOT_TOPIC
-        MQTT_DISCOVERY_TOPIC,
+        mqttRootTopic,
+        mqttDiscoveryTopic,
         topicParts[DISCOVERY_REALM_TOPIC_POS],
         fairyContainer.getDeviceName(),
         fairyBinder.getName()
@@ -438,6 +446,17 @@ void activate_fairylights() {
       && strcmp(lightConfig[i][3], "") != 0
     ) {
       int pin = atoi((char *)lightConfig[i][3]);
+
+      Serial.print("[Activating new fairylight with name ");
+      Serial.print(lightConfig[i][0]);
+      Serial.print(" and nick ");
+      Serial.print(lightConfig[i][1]);
+      Serial.print(" in realm ");
+      Serial.print(lightConfig[i][2]);
+      Serial.print(" on pin ");
+      Serial.print(pin);
+      Serial.println("]");
+
       fairyContainer.activateNew(
         pin,
         lightConfig[i][0],

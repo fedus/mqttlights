@@ -10,14 +10,14 @@ FairyMQTTBinder::FairyMQTTBinder() {
 }
 
 bool FairyMQTTBinder::setup(int pin, const char* name, const char* nick, const char* realm /* = "public" */) {
-  if (this->fairyLight != nullptr) {
+  if (this->fairyLight == nullptr) {
     return false;
   }
 
   this->fairyLight->setup(pin);
 
   active = true;
-  snprintf(this->name, sizeof(this->name), "%", name);
+  snprintf(this->name, sizeof(this->name), "%s", name);
   snprintf(this->nick, sizeof(this->nick), "%s", nick);
   snprintf(this->realm, sizeof(this->realm), "%s", realm);
 
@@ -45,15 +45,19 @@ const char* FairyMQTTBinder::getRealm() {
 }
 
 bool FairyMQTTBinder::isNick(const char* otherNick) {
-  return strcmp(nick, otherNick);
+  return strcmp(nick, otherNick)  == 0;
 }
 
 bool FairyMQTTBinder::isName(const char* otherName) {
-  return strcmp(name, otherName);
+  return strcmp(name, otherName)  == 0;
 }
 
 bool FairyMQTTBinder::isRealm(const char* otherRealm) {
-  return strcmp(realm, otherRealm);
+  Serial.print("Comparing realm ");
+  Serial.print(realm);
+  Serial.print(" to ");
+  Serial.println(otherRealm);
+  return strcmp(realm, otherRealm) == 0;
 }
 
 FairyLights& FairyMQTTBinder::getFairyLight() {
