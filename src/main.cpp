@@ -205,7 +205,7 @@ void genericSerialLog(const char* description, const int new_value) {
 }
 
 void setMode(FairyMQTTBinder &fairyBinder, int new_value) {
-    FairyLights fairyLight = fairyBinder.getFairyLight();
+    FairyLights &fairyLight = fairyBinder.getFairyLight();
 
     genericSerialLog("mode", new_value);
 
